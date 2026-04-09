@@ -1,5 +1,5 @@
 -- =============================================================================
--- Row Count Validation: Source (SQL Server) vs Target (Databricks)
+-- Row Count Validation: Source (SQL Server) vs Target (DWH)
 -- Run these queries side-by-side to compare record counts
 -- =============================================================================
 
@@ -22,18 +22,18 @@ SELECT 'Source: dim.Customer (Current)' AS check_name,
 FROM [DW_Staging].[dim].[Customer]
 WHERE IsCurrent = 1;
 
--- Target (run on Databricks)
--- SELECT 'Bronze: raw_customers' AS check_name,
+-- Target (run on Target Data Warehouse)
+-- SELECT 'Staging: raw_customers' AS check_name,
 --        COUNT(*) AS row_count
--- FROM migration_prod.bronze.raw_customers;
+-- FROM staging.raw_customers;
 --
--- SELECT 'Silver: cleansed_customers' AS check_name,
+-- SELECT 'Staging: cleansed_customers' AS check_name,
 --        COUNT(*) AS row_count
--- FROM migration_prod.silver.cleansed_customers;
+-- FROM staging.cleansed_customers;
 --
--- SELECT 'Gold: dim_customer (Current)' AS check_name,
+-- SELECT 'Production: dim_customer (Current)' AS check_name,
 --        COUNT(*) AS row_count
--- FROM migration_prod.gold.dim_customer
+-- FROM production.dim_customer
 -- WHERE is_current = true;
 
 
@@ -57,19 +57,19 @@ SELECT 'Source: fact.Orders' AS check_name,
        COUNT(*) AS row_count
 FROM [DW_Staging].[fact].[Orders];
 
--- Target (run on Databricks)
--- SELECT 'Bronze: raw_orders' AS check_name,
+-- Target (run on Target Data Warehouse)
+-- SELECT 'Staging: raw_orders' AS check_name,
 --        COUNT(*) AS row_count
--- FROM migration_prod.bronze.raw_orders;
+-- FROM staging.raw_orders;
 --
--- SELECT 'Gold: fact_order' AS check_name,
+-- SELECT 'Production: fact_order' AS check_name,
 --        COUNT(*) AS row_count
--- FROM migration_prod.gold.fact_order;
+-- FROM production.fact_order;
 --
--- SELECT 'Gold: fact_order by Year' AS check_name,
+-- SELECT 'Production: fact_order by Year' AS check_name,
 --        order_year,
 --        COUNT(*) AS row_count
--- FROM migration_prod.gold.fact_order
+-- FROM production.fact_order
 -- GROUP BY order_year
 -- ORDER BY order_year;
 
@@ -86,10 +86,10 @@ SELECT 'Source: Total Revenue' AS check_name,
        MAX(TotalAmount) AS max_amount
 FROM [AdventureWorks].[dbo].[Orders];
 
--- Target (Databricks)
+-- Target (Data Warehouse)
 -- SELECT 'Target: Total Revenue' AS check_name,
 --        SUM(TotalAmount) AS total_amount,
 --        AVG(TotalAmount) AS avg_amount,
 --        MIN(TotalAmount) AS min_amount,
 --        MAX(TotalAmount) AS max_amount
--- FROM migration_prod.gold.fact_order;
+-- FROM production.fact_order;
