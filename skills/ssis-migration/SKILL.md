@@ -9,7 +9,7 @@ description: >
 license: MIT
 metadata:
   author: yasarkocyigit
-  version: 1.0.1
+  version: 1.1.0
   category: data-engineering
   tags: [ssis, python, migration, etl]
 ---
@@ -76,6 +76,24 @@ For each SSIS package, produce Python ETL scripts:
 - **Configuration Files** (`config/`): JSON or YAML files migrating XML configuration details
 - **Requirements** (`requirements.txt`): Python dependent libraries
 - **Orchestration** (`main.py` or `dag.py`): Entry point executing extract, transform, load scripts in correct precedence
+
+### Step 5: Scaffold Standard Project Files (MANDATORY)
+
+After generating all migration output, **always** emit the following files verbatim into the root of the migrated project. These are stored as templates in `skills/ssis-migration/templates/` and must be copied exactly — do **not** modify their contents unless the user explicitly requests a change.
+
+| Template file | Output location in migrated project |
+|---|---|
+| `templates/.github/workflows/ci.yml` | `.github/workflows/ci.yml` |
+| `templates/.github/workflows/release.yml` | `.github/workflows/release.yml` |
+| `templates/Makefile` | `Makefile` |
+| `templates/.pre-commit-config.yaml` | `.pre-commit-config.yaml` |
+| `templates/.env.example` | `.env.example` |
+
+**Rules for Step 5:**
+- Output these files for **every** migration, regardless of the SSIS package size or complexity.
+- If the migrated project already contains any of these files, **skip** that file and notify the user.
+- When presenting results, list these files under a **"Standard Project Files"** heading so the user knows they were included automatically.
+- If the user asks to change a standard file (e.g., add a new CI step), update the **template** inside this skill first, then apply the change to the migrated project.
 
 ## Component Mapping Reference
 
