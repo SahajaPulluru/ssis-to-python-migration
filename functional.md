@@ -1,8 +1,10 @@
-# 2. FUNCTIONAL BLOCK DIAGRAM/DESCRIPTION OF TRANSLATION FRAMEWORK
+# UPDATED FUNCTIONAL DIAGRAMS & SEQUENCE MATRIX
 
-The translation and analysis framework is orchestrated as a state-based sequential processing graph. All data transitions, token mappings, risk metrics, and evaluation scores are preserved within a unified `TranslationState` checkpoint context which is serialized to a local JSON database metastore. The functional block diagram of the framework and its data paths is shown below in Figure 2.
+This document contains the latest structural diagrams for the M.Tech final dissertation report, incorporating the **PyTesseract OCR Image Ingestion Subsystem** and the **FAISS RAG Bilingual Pseudo-HyDE Glossary Engine**.
 
-### Figure 2: FUNCTIONAL BLOCK DIAGRAM of translation pipeline graph
+---
+
+## 1. Functional Block Diagram
 
 ```mermaid
 flowchart TD
@@ -16,11 +18,24 @@ flowchart TD
     classDef UI fill:#172554,stroke:#3b82f6,stroke-width:2px,color:#F8FAFC;
 
     %% Ingestion Node
-    A["Raw Document Ingestion<br/>(PDF / DOCX / TXT)"] -->|Ingest & Detect Language| B["Language Detector<br/>(langdetect / Manual Select)"]
-    class A,B Ingestion;
+    A["Raw Document Ingestion<br/>(PDF / DOCX / TXT / PNG / JPG / BMP)"] -->|Ingest & Detect Format| B["Ingestion Parser Node"]
+    
+    subgraph B ["Ingestion Subsystem"]
+        B1["Format Router"]
+        B2["Layout-Aware Text Extractor<br/>(pdfplumber / python-docx)"]
+        B3["PyTesseract OCR Subsystem<br/>(Scanned Images & PDF Image Fallbacks)"]
+        B4["Language Detector<br/>(langdetect / Override Check)"]
+        
+        B1 --> B2
+        B1 --> B3
+        B2 & B3 --> B4
+    end
+    
+    class A Ingestion;
+    class B,B1,B2,B3,B4 Ingestion;
 
     %% Preprocessing Node
-    B -->|Original Text| C["PII Masker Subsystem<br/>(Spacy NER & Regex Patterns)"]
+    B4 -->|Original Text| C["PII Masker Subsystem<br/>(Spacy NER & Regex Patterns)"]
     C -->|Masked PII Text + Map| D["DNT Masker Subsystem<br/>(dnt.json Brand/ID Filters)"]
     class C,D Preprocess;
 
@@ -28,11 +43,21 @@ flowchart TD
     D -->|Fully Masked Text| E["Risk Classification Engine<br/>(3 Pillars: Sensitivity, Impact, Criticality)"]
     class E RiskEngine;
 
-    %% Tiered Routing
+    %% Tiered Routing & RAG
     E -->|Tier: Low| F["Low-Risk Translation Adapter<br/>(NLLB-200-distilled-600M)"]
     E -->|Tier: Medium| G["Medium-Risk Translation Adapter<br/>(mBART-50 Many-to-Many)"]
     E -->|Tier: High| H["High-Risk Translation Adapter<br/>(Local TranslateGemma via Ollama)"]
     class F,G,H TransRoute;
+
+    %% RAG Component
+    H <-->|Semantic Context Query| RAG["FAISS RAG Glossary Engine"]
+    subgraph RAG ["FAISS RAG Glossary Engine"]
+        R1["Bilingual Pseudo-HyDE Generator<br/>(Fast Word-Level Trans Translation)"]
+        R2["Bilingual Embedding Merger<br/>(Source Text + Hypothetical Target)"]
+        R3["FAISS FlatIP Index<br/>(Inner Product Cosine Similarity Search)"]
+        R1 --> R2 --> R3
+    end
+    class RAG,R1,R2,R3 TransRoute;
 
     %% Validation Node
     F -->|Translated English Text| I["Multi-Agent Validation Suite"]
@@ -60,7 +85,9 @@ flowchart TD
     class L,M Exporter;
 ```
 
-### Figure 3: SEQUENCE DIAGRAM of framework execution code flow
+---
+
+## 2. Sequence Diagram
 
 ```mermaid
 sequenceDiagram
@@ -68,26 +95,45 @@ sequenceDiagram
     actor Analyst as User / Analyst
     participant Web as Dashboard (FastAPI)
     participant Orch as Orchestrator (orchestrator.py)
+    participant Ingest as Ingestion Parser (ingestion.py)
     participant Pre as Preprocessor (preprocessing.py)
     participant Risk as Risk Engine (risk_engine.py)
+    participant RAG as FAISS RAG Glossary (rag_glossary.py)
     participant Trans as Translation Router (translation.py)
     participant Val as Validation Engine (validation.py)
     participant Post as Post-Processor (post_processing.py)
 
-    Analyst->>Web: Uploads Document (Source Lang, Target="en")
+    Analyst->>Web: Uploads Document (PDF/DOCX/PNG/JPG, Target="en")
     Web->>Orch: run_translation_pipeline(file_path, source, target)
-    Orch->>Orch: Ingest document (extract text & detect language)
+    
+    %% Ingestion with OCR
+    Orch->>Ingest: ingest_document(file_path, target_lang)
+    alt Upload is standard Digital PDF/DOCX
+        Ingest->>Ingest: Extract digital text & format tables
+    else Upload is Scanned Image or Non-Text PDF
+        Ingest->>Ingest: Trigger PyTesseract OCR extraction
+    end
+    Ingest->>Ingest: Detect source language (langdetect)
+    Ingest-->>Orch: Return TranslationState (raw_text, detected_lang)
+
     Orch->>Pre: Mask PII & DNT keywords
     Pre-->>Orch: Return masked text & token map
     Orch->>Risk: classify_document_risk(masked_text)
     Risk-->>Orch: Return Risk Metrics (Sensitivity, Impact, Criticality, Tier)
-    Orch->>Trans: execute_translation(masked_text, tier, glossary_hints)
     
     alt Tier is High
+        Orch->>RAG: retrieve_glossary_hints(text, target_lang)
+        RAG->>RAG: Run Pseudo-HyDE (bilingual lookup)
+        RAG->>RAG: Embed combined bilingual query
+        RAG->>RAG: FAISS inner-product vector search
+        RAG-->>Orch: Return top-k Glossary hints
+        Orch->>Trans: execute_translation(masked_text, tier, glossary_hints)
         Trans->>Trans: Call local Ollama TranslateGemma (translategemma:4b)
     else Tier is Medium
+        Orch->>Trans: execute_translation(masked_text, tier)
         Trans->>Trans: Call local mBART-50 (Many-to-Many)
     else Tier is Low
+        Orch->>Trans: execute_translation(masked_text, tier)
         Trans->>Trans: Call local NLLB-200 (600M)
     end
 
@@ -111,33 +157,3 @@ sequenceDiagram
     Orch-->>Web: Return final completed state
     Web-->>Analyst: Display "✓ APPROVED & EXPORTED TO GRAPH" and JSON-LD
 ```
-
----
-
-### 1. SUB-SYSTEM NODE DESCRIPTIONS
-
-#### a) File Ingestion Subsystem
-This entrypoint node handles file parsing and language routing. It extracts raw unicode streams from uploaded documents while keeping structural layouts (tables, newlines, and list layouts) intact. Once the text is extracted, it calls the **Language Detection module** to determine the document's native script, routing the ISO code to the classification engine.
-
-#### b) Preprocessing Masking Subsystem
-The masking subsystem isolates critical customer identities and corporate markers prior to translation:
-* **PII Masking:** Scans the text using a SpaCy NER pipeline and regular expression extractors to locate customer names, credit card numbers, email accounts, and SSNs, replacing them with formatted token tags (e.g., `__PII_EMAIL_0__`).
-* **DNT (Do Not Translate) Masking:** Matches tokens against `dnt.json` definitions to catch and replace SWIFT codes, brand IDs, and IBAN formats. Both token mapping directories are saved in the database metastore to allow full reconstruction.
-
-#### c) Risk Classification Subsystem
-Evaluates the document against Sensitivity, Business Impact, and Criticality. It scans for regulatory concepts and high-value transactions (monetary figures exceeding $\$100,000$). Documents containing financial compliance triggers are immediately categorized as High-Risk to route them to the specialized TranslateGemma translation model and enforce dashboard review.
-
-#### d) Translation Routing Subsystem
-Directs document translation into English based on the assigned risk score:
-* **NLLB-200-distilled-600M:** Executed for Low-Risk files, ensuring swift local translation.
-* **mBART-50:** Executed for Medium-Risk files, leveraging its Seq2Seq architecture for structural contract terminology.
-* **Ollama TranslateGemma (`translategemma:4b`):** Deployed for High-Risk files, delivering context-aware local translations while preserving all PII/DNT tags.
-
-#### e) Validation & Auditing Subsystem
-Performs a series of verification checks on the output translation:
-* **Numerical Verifier:** Matches all numerals and currencies between source and translation.
-* **Back-Translation Check:** Translates the text back to the source language using TranslateGemma and measures word-level Jaccard similarity. If the score falls below `0.82`, it triggers a dashboard review halt.
-* **Safety Guardrails:** Scans translation for compliance violations (fraud, bribery, tax evasion) to alert the analyst.
-
-#### f) Post-Processing & Exporter Subsystem
-Once approved (either automatically for low/medium-risk documents or manually by the analyst), the system unmasks all tokens using the map directory, restoring the document's original names and codes. It then extracts financial Named Entities (NER) and exports the data into a standard **JSON-LD Schema** structure, allowing the translated document and its compliance metadata to be indexed into an enterprise **Knowledge Graph**.
